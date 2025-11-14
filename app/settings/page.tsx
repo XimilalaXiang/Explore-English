@@ -63,7 +63,10 @@ export default function SettingsPage() {
       })
       const data = await response.json()
       if (data.data) {
-        setModels(data.data)
+        const sortedModels = data.data.sort((a: Model, b: Model) => 
+          a.id.toLowerCase().localeCompare(b.id.toLowerCase())
+        )
+        setModels(sortedModels)
       }
     } catch (error) {
       console.error("Error fetching models:", error)
