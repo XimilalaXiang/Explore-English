@@ -515,14 +515,14 @@ function CanvasContent() {
             </div>
           </Panel>
 
-          {/* 空状态提示 */}
+          {/* 空状态提示 - 使用绝对定位居中 */}
           {nodes.length === 0 && (
-            <Panel position="top-center" className="mt-32">
+            <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
               <div className="text-center text-muted-foreground">
                 <p className="text-lg mb-2">画布是空的</p>
                 <p className="text-sm">在上方输入框输入英文单词开始探索</p>
               </div>
-            </Panel>
+            </div>
           )}
         </ReactFlow>
       </div>
