@@ -311,13 +311,8 @@ export default function HomePage() {
               onClick={() => { setShowFavorites(!showFavorites); setShowHistory(false) }} 
               className={`h-8 gap-2 ${showFavorites ? 'bg-accent' : ''}`}
             >
-              <Heart className={`h-4 w-4 ${favorites.length > 0 ? 'text-red-500 fill-red-500' : ''}`} />
+              <Heart className="h-4 w-4" />
               <span className="text-sm">收藏</span>
-              {favorites.length > 0 && (
-                <span className="text-xs bg-red-500 text-white rounded-full px-1.5 py-0.5 min-w-[18px] text-center">
-                  {favorites.length}
-                </span>
-              )}
             </Button>
             <Button 
               variant="ghost" 
