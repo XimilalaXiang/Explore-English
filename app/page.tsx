@@ -5,7 +5,7 @@ import { Card } from "@/components/ui/card"
 import { Input } from "@/components/ui/input"
 import { Button } from "@/components/ui/button"
 import { ThemeToggle } from "@/components/theme-toggle"
-import { BookOpen, Search, Settings, History, Sparkles, Type, X, Copy, Check, Volume2, Star, StarOff, Heart } from "lucide-react"
+import { BookOpen, Search, Settings, History, Sparkles, Type, X, Copy, Check, Volume2, Star, StarOff, Heart, LayoutGrid } from "lucide-react"
 import Link from "next/link"
 import { toast } from "sonner"
 
@@ -323,6 +323,12 @@ export default function HomePage() {
               <History className="h-4 w-4" />
               <span className="text-sm">历史</span>
             </Button>
+            <Link href="/canvas">
+              <Button variant="ghost" size="sm" className="h-8 gap-2">
+                <LayoutGrid className="h-4 w-4" />
+                <span className="text-sm">画布</span>
+              </Button>
+            </Link>
             <Link href="/settings">
               <Button variant="ghost" size="sm" className="h-8 gap-2">
                 <Settings className="h-4 w-4" />
