@@ -16,8 +16,11 @@ interface SearchResult {
   timestamp: number
 }
 
-interface FavoriteWord {
+// 收藏项现在包含完整的搜索结果
+interface FavoriteItem {
   word: string
+  semanticWords: Array<{ word: string; definition: string }>
+  similarWords: Array<{ word: string; similarity: string }>
   addedAt: number
 }
 
@@ -28,7 +31,7 @@ export default function HomePage() {
   const [showHistory, setShowHistory] = useState(false)
   const [showFavorites, setShowFavorites] = useState(false)
   const [history, setHistory] = useState<SearchResult[]>([])
-  const [favorites, setFavorites] = useState<FavoriteWord[]>([])
+  const [favorites, setFavorites] = useState<FavoriteItem[]>([])
   const [copiedSection, setCopiedSection] = useState<"semantic" | "similar" | null>(null)
   const [speakingWord, setSpeakingWord] = useState<string | null>(null)
 
@@ -46,7 +49,16 @@ export default function HomePage() {
     const savedFavorites = localStorage.getItem("favorites")
     if (savedFavorites) {
       try {
-        setFavorites(JSON.parse(savedFavorites))
+        // 兼容旧格式的收藏数据
+        const parsed = JSON.parse(savedFavorites)
+        // 检查是否是旧格式（只有 word 和 addedAt）
+        if (parsed.length > 0 && !parsed[0].semanticWords) {
+          // 旧格式，清空收藏（因为没有完整数据）
+          setFavorites([])
+          localStorage.removeItem("favorites")
+        } else {
+          setFavorites(parsed)
+        }
       } catch {
         console.error("Failed to parse favorites")
       }
@@ -58,26 +70,68 @@ export default function HomePage() {
     return favorites.some(f => f.word.toLowerCase() === wordToCheck.toLowerCase())
   }, [favorites])
 
-  // 切换收藏状态
-  const toggleFavorite = useCallback((wordToToggle: string) => {
-    const isCurrentlyFavorite = isFavorite(wordToToggle)
-    
-    let newFavorites: FavoriteWord[]
-    if (isCurrentlyFavorite) {
-      newFavorites = favorites.filter(f => f.word.toLowerCase() !== wordToToggle.toLowerCase())
-      toast.success(`已取消收藏 "${wordToToggle}"`)
-    } else {
-      newFavorites = [{ word: wordToToggle, addedAt: Date.now() }, ...favorites]
-      toast.success(`已收藏 "${wordToToggle}"`, {
-        icon: <Star className="h-4 w-4 text-yellow-500 fill-yellow-500" />,
-      })
+  // 获取收藏的完整数据
+  const getFavoriteData = useCallback((wordToGet: string): FavoriteItem | undefined => {
+    return favorites.find(f => f.word.toLowerCase() === wordToGet.toLowerCase())
+  }, [favorites])
+
+  // 收藏当前搜索结果
+  const addToFavorites = useCallback((resultToSave: SearchResult) => {
+    if (isFavorite(resultToSave.word)) {
+      toast.info(`"${resultToSave.word}" 已在收藏夹中`)
+      return
     }
-    
+
+    const newFavorite: FavoriteItem = {
+      word: resultToSave.word,
+      semanticWords: resultToSave.semanticWords,
+      similarWords: resultToSave.similarWords,
+      addedAt: Date.now()
+    }
+
+    const newFavorites = [newFavorite, ...favorites]
     setFavorites(newFavorites)
     localStorage.setItem("favorites", JSON.stringify(newFavorites))
+    toast.success(`已收藏 "${resultToSave.word}"`, {
+      icon: <Star className="h-4 w-4 text-yellow-500 fill-yellow-500" />,
+    })
   }, [favorites, isFavorite])
 
-  // 发音功能
+  // 取消收藏
+  const removeFromFavorites = useCallback((wordToRemove: string) => {
+    const newFavorites = favorites.filter(f => f.word.toLowerCase() !== wordToRemove.toLowerCase())
+    setFavorites(newFavorites)
+    localStorage.setItem("favorites", JSON.stringify(newFavorites))
+    toast.success(`已取消收藏 "${wordToRemove}"`)
+  }, [favorites])
+
+  // 切换收藏状态（用于当前结果）
+  const toggleFavoriteForResult = useCallback(() => {
+    if (!results) return
+
+    if (isFavorite(results.word)) {
+      removeFromFavorites(results.word)
+    } else {
+      addToFavorites(results)
+    }
+  }, [results, isFavorite, addToFavorites, removeFromFavorites])
+
+  // 从收藏夹恢复结果（不需要重新调用 API）
+  const restoreFromFavorite = useCallback((favorite: FavoriteItem) => {
+    const restoredResult: SearchResult = {
+      word: favorite.word,
+      semanticWords: favorite.semanticWords,
+      similarWords: favorite.similarWords,
+      timestamp: favorite.addedAt
+    }
+    setResults(restoredResult)
+    setWord(favorite.word)
+    setShowFavorites(false)
+    setShowHistory(false)
+    toast.success(`已恢复 "${favorite.word}" 的收藏内容`)
+  }, [])
+
+  // 发音功能 - 修复错误处理
   const speakWord = useCallback((wordToSpeak: string, accent: 'en-US' | 'en-GB' = 'en-US') => {
     if (!('speechSynthesis' in window)) {
       toast.error("您的浏览器不支持语音合成功能")
@@ -92,11 +146,21 @@ export default function HomePage() {
     utterance.rate = 0.9
     utterance.pitch = 1
 
-    utterance.onstart = () => setSpeakingWord(wordToSpeak)
-    utterance.onend = () => setSpeakingWord(null)
-    utterance.onerror = () => {
+    // 标记开始发音
+    setSpeakingWord(wordToSpeak)
+
+    utterance.onend = () => {
       setSpeakingWord(null)
-      toast.error("发音失败，请重试")
+    }
+
+    // 只在真正的错误时显示提示，忽略 interrupted 错误（用户取消或切换发音时会触发）
+    utterance.onerror = (event) => {
+      setSpeakingWord(null)
+      // 'interrupted' 和 'canceled' 是正常的取消操作，不需要报错
+      if (event.error !== 'interrupted' && event.error !== 'canceled') {
+        console.error("Speech error:", event.error)
+        toast.error("发音失败，请重试")
+      }
     }
 
     window.speechSynthesis.speak(utterance)
@@ -190,6 +254,14 @@ export default function HomePage() {
     }
   }
 
+  // 从历史记录恢复（直接显示，不需要重新调用 API）
+  const restoreFromHistory = useCallback((historyItem: SearchResult) => {
+    setResults(historyItem)
+    setWord(historyItem.word)
+    setShowHistory(false)
+    setShowFavorites(false)
+  }, [])
+
   const clearHistory = () => {
     setHistory([])
     localStorage.removeItem("searchHistory")
@@ -202,13 +274,6 @@ export default function HomePage() {
     localStorage.removeItem("favorites")
     setShowFavorites(false)
     toast.success("收藏夹已清空")
-  }
-
-  const removeFavorite = (wordToRemove: string) => {
-    const newFavorites = favorites.filter(f => f.word !== wordToRemove)
-    setFavorites(newFavorites)
-    localStorage.setItem("favorites", JSON.stringify(newFavorites))
-    toast.success(`已取消收藏 "${wordToRemove}"`)
   }
 
   const copyToClipboard = async (type: "semantic" | "similar") => {
@@ -339,15 +404,12 @@ export default function HomePage() {
                     className="flex items-center justify-between px-4 py-3 rounded-xl hover:bg-accent transition-colors group"
                   >
                     <button
-                      onClick={() => {
-                        setWord(item.word)
-                        handleSearch(item.word)
-                      }}
+                      onClick={() => restoreFromFavorite(item)}
                       className="flex-1 text-left"
                     >
                       <div className="font-medium text-foreground">{item.word}</div>
                       <div className="text-sm text-muted-foreground">
-                        {new Date(item.addedAt).toLocaleDateString("zh-CN")}
+                        {new Date(item.addedAt).toLocaleDateString("zh-CN")} · {item.semanticWords.length} 个语义相似词
                       </div>
                     </button>
                     <div className="flex items-center gap-1">
@@ -362,7 +424,7 @@ export default function HomePage() {
                       <Button
                         variant="ghost"
                         size="sm"
-                        onClick={(e) => { e.stopPropagation(); removeFavorite(item.word) }}
+                        onClick={(e) => { e.stopPropagation(); removeFromFavorites(item.word) }}
                         className="h-8 w-8 p-0 opacity-0 group-hover:opacity-100 transition-opacity text-red-500 hover:text-red-600"
                       >
                         <StarOff className="h-4 w-4" />
@@ -404,10 +466,7 @@ export default function HomePage() {
                     className="flex items-center justify-between px-4 py-3 rounded-xl hover:bg-accent transition-colors group"
                   >
                     <button
-                      onClick={() => {
-                        setWord(item.word)
-                        handleSearch(item.word)
-                      }}
+                      onClick={() => restoreFromHistory(item)}
                       className="flex-1 text-left"
                     >
                       <div className="font-medium text-foreground">{item.word}</div>
@@ -427,7 +486,14 @@ export default function HomePage() {
                       <Button
                         variant="ghost"
                         size="sm"
-                        onClick={(e) => { e.stopPropagation(); toggleFavorite(item.word) }}
+                        onClick={(e) => { 
+                          e.stopPropagation()
+                          if (isFavorite(item.word)) {
+                            removeFromFavorites(item.word)
+                          } else {
+                            addToFavorites(item)
+                          }
+                        }}
                         className="h-8 w-8 p-0 opacity-0 group-hover:opacity-100 transition-opacity"
                       >
                         <Star className={`h-4 w-4 ${isFavorite(item.word) ? 'text-yellow-500 fill-yellow-500' : ''}`} />
@@ -459,7 +525,7 @@ export default function HomePage() {
                   <Button
                     variant="ghost"
                     size="sm"
-                    onClick={() => toggleFavorite(results.word)}
+                    onClick={toggleFavoriteForResult}
                     className="h-9 w-9 p-0 rounded-full"
                     title={isFavorite(results.word) ? "取消收藏" : "添加收藏"}
                   >
@@ -518,14 +584,6 @@ export default function HomePage() {
                           >
                             <Volume2 className={`h-3.5 w-3.5 ${speakingWord === item.word ? 'text-primary animate-pulse' : ''}`} />
                           </Button>
-                          <Button
-                            variant="ghost"
-                            size="sm"
-                            onClick={() => toggleFavorite(item.word)}
-                            className="h-6 w-6 p-0"
-                          >
-                            <Star className={`h-3.5 w-3.5 ${isFavorite(item.word) ? 'text-yellow-500 fill-yellow-500' : ''}`} />
-                          </Button>
                         </div>
                       </div>
                       <div className="text-sm text-muted-foreground leading-relaxed">{item.definition}</div>
@@ -566,14 +624,6 @@ export default function HomePage() {
                             className="h-6 w-6 p-0"
                           >
                             <Volume2 className={`h-3.5 w-3.5 ${speakingWord === item.word ? 'text-primary animate-pulse' : ''}`} />
-                          </Button>
-                          <Button
-                            variant="ghost"
-                            size="sm"
-                            onClick={() => toggleFavorite(item.word)}
-                            className="h-6 w-6 p-0"
-                          >
-                            <Star className={`h-3.5 w-3.5 ${isFavorite(item.word) ? 'text-yellow-500 fill-yellow-500' : ''}`} />
                           </Button>
                         </div>
                       </div>
